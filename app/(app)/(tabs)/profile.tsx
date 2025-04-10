@@ -1,11 +1,144 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet, Image, TouchableOpacity } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, Image, TouchableOpacity, TextInput, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Activity, Apple, Bell, Heart, History, Scale, Settings as SettingsIcon } from 'lucide-react-native';
+import { Activity, Apple, Bell, Heart, History, Scale, Settings as SettingsIcon, Camera, X, Check } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
+import { useProfile } from '../../../hooks/userProfile';
+import { formatHeight, formatWeight, calculateBMI, convertHeight, convertWeight } from '@/lib/utils/units';
+import UnitInput from '@/components/UnitInput';
+import * as ImagePicker from 'expo-image-picker';
+import DateTimePicker from '@react-native-community/datetimepicker';
+
+const DIETARY_RESTRICTIONS = [
+  'Vegetarian',
+  'Vegan',
+  'Low Carb',
+  'Gluten Free',
+  'Lactose Free',
+  'Keto',
+  'Paleo',
+];
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const { profile, loading, error, updateProfile } = useProfile();
+  const [isEditing, setIsEditing] = useState(false);
+  const [useImperialHeight, setUseImperialHeight] = useState(false);
+  const [useImperialWeight, setUseImperialWeight] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [editedProfile, setEditedProfile] = useState(profile);
+  const [newAllergy, setNewAllergy] = useState('');
+
+  const pickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.5,
+        base64: false,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0].uri) {
+        setEditedProfile(prev => {
+          if (!prev) return prev; // null safety check
+          return {
+            ...prev,
+            profileImage: result.assets[0].uri,
+          };
+        });
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+    }
+  };
+
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    const currentDate = selectedDate || editedProfile?.dateOfBirth;
+    
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+    
+    if (currentDate) {
+      setEditedProfile(prev => {
+        if (!prev) return prev;
+        return { ...prev, dateOfBirth: currentDate };});
+    }
+  };
+
+  const handleHeightChange = (value: string) => {
+    const newHeight = useImperialHeight ? convertHeight.inToCm(parseFloat(value)) : value;
+    setEditedProfile(prev => {
+      if (!prev) return prev;
+      return{ ...prev, height: newHeight };});
+  };
+
+  const handleWeightChange = (value: string) => {
+    const newWeight = useImperialWeight ? convertWeight.lbToKg(parseFloat(value)) : value;
+    setEditedProfile(prev => {
+      if (!prev) return prev;
+      return{ ...prev, weight: newWeight };});
+  };
+
+  const toggleDietaryRestriction = (restriction: string) => {
+    setEditedProfile(prev => {
+      if (!prev) return prev;
+      return{
+      ...prev,
+      dietaryRestrictions: prev.dietaryRestrictions.includes(restriction)
+        ? prev.dietaryRestrictions.filter(r => r !== restriction)
+        : [...prev.dietaryRestrictions, restriction],
+    };});
+  };
+
+  const addAllergy = () => {
+    if (newAllergy.trim()) {
+      setEditedProfile(prev => {
+        if (!prev) return prev;
+        return{
+        ...prev,
+        allergies: [...prev.allergies, newAllergy.trim()],
+      };});
+      setNewAllergy('');
+    }
+  };
+
+  const removeAllergy = (index: number) => {
+    setEditedProfile(prev => {
+      if (!prev) return prev;
+      return{
+      ...prev,
+      allergies: prev.allergies.filter((_, i) => i !== index),
+    };});
+  };
+
+  const handleSave = async () => {
+    try {
+      if (!editedProfile) return;
+      await updateProfile(editedProfile);
+      setIsEditing(false);
+    } catch (error) {
+      console.error('Error saving profile:', error);
+    }
+  };
+  
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>Loading profile...</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorText}>{error}</Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container}>
@@ -14,78 +147,271 @@ export default function ProfileScreen() {
         style={styles.header}
       >
         <View style={styles.profileSection}>
-          <Image
-            source={{ uri: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200' }}
-            style={styles.profileImage}
-          />
-          <Text style={styles.name}>Sarah Johnson</Text>
-          <Text style={styles.subtitle}>Health Enthusiast</Text>
+          <TouchableOpacity 
+            style={styles.profileImageContainer} 
+            onPress={isEditing ? pickImage : undefined}
+          >
+            <Image
+              source={{ 
+                uri: editedProfile?.profileImage || 
+                     'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200' 
+              }}
+              style={styles.profileImage}
+            />
+            {isEditing && (
+              <View style={styles.editOverlay}>
+                <Camera size={24} color="#fff" />
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {isEditing ? (
+            <TextInput
+              style={styles.nameInput}
+              value={editedProfile?.nickname}
+              onChangeText={(text) => setEditedProfile(prev => {
+                if (!prev) return prev;
+                return{ ...prev, nickname: text };})}
+              placeholder="Your name"
+            />
+          ) : (
+            <Text style={styles.name}>{profile?.nickname || 'User'}</Text>
+          )}
+
+          {isEditing ? (
+            <TextInput
+              style={styles.bioInput}
+              value={editedProfile?.bio}
+              onChangeText={(text) => setEditedProfile(prev => {
+                if (!prev) return prev;
+                return{ ...prev, bio: text };})}
+              placeholder="Tell us about yourself"
+              multiline
+            />
+          ) : (
+            <Text style={styles.subtitle}>{profile?.bio || 'Health Enthusiast'}</Text>
+          )}
           
           <TouchableOpacity 
             style={styles.editButton}
-            onPress={() => router.push('/(tabs)/settings')}
+            onPress={isEditing ? handleSave : () => setIsEditing(true)}
           >
-            <SettingsIcon size={20} color="#2196F3" />
-            <Text style={styles.editButtonText}>Edit Profile</Text>
+            {isEditing ? (
+              <Check size={20} color="#2196F3" />
+            ) : (
+              <SettingsIcon size={20} color="#2196F3" />
+            )}
+            <Text style={styles.editButtonText}>
+              {isEditing ? 'Save Changes' : 'Edit Profile'}
+            </Text>
           </TouchableOpacity>
         </View>
       </LinearGradient>
 
-      {/* Health Stats */}
       <View style={styles.statsContainer}>
-        <View style={styles.statCard}>
-          <Scale size={24} color="#4CAF50" />
-          <Text style={styles.statValue}>65kg</Text>
-          <Text style={styles.statLabel}>Weight</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Activity size={24} color="#2196F3" />
-          <Text style={styles.statValue}>172cm</Text>
-          <Text style={styles.statLabel}>Height</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Heart size={24} color="#F44336" />
-          <Text style={styles.statValue}>22.0</Text>
-          <Text style={styles.statLabel}>BMI</Text>
-        </View>
+        {isEditing ? (
+          <>
+            <UnitInput
+              label="Height"
+              value={useImperialHeight ? 
+                convertHeight.cmToIn(parseFloat(editedProfile?.height || '0')).toString() : 
+                editedProfile?.height || ''}
+              onChangeText={handleHeightChange}
+              metric="cm"
+              imperial="in"
+              useImperial={useImperialHeight}
+              onToggleUnit={() => setUseImperialHeight(!useImperialHeight)}
+              step={useImperialHeight ? 0.5 : 1}
+            />
+            <UnitInput
+              label="Weight"
+              value={useImperialWeight ? 
+                convertWeight.kgToLb(parseFloat(editedProfile?.weight || '0')).toString() : 
+                editedProfile?.weight || ''}
+              onChangeText={handleWeightChange}
+              metric="kg"
+              imperial="lb"
+              useImperial={useImperialWeight}
+              onToggleUnit={() => setUseImperialWeight(!useImperialWeight)}
+              step={useImperialWeight ? 0.5 : 1}
+            />
+            <TouchableOpacity
+              style={styles.dateButton}
+              onPress={() => setShowDatePicker(true)}>
+              <Text style={styles.dateButtonText}>
+                {editedProfile?.dateOfBirth?.toLocaleDateString() || 'Select date of birth'}
+              </Text>
+            </TouchableOpacity>
+            {showDatePicker && (
+              <DateTimePicker
+                value={editedProfile?.dateOfBirth || new Date()}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={handleDateChange}
+                maximumDate={new Date()}
+              />
+            )}
+          </>
+        ) : (
+          <>
+            <View style={styles.statsRow}>
+  <View style={styles.statCol}>
+    <Scale size={24} color="#4CAF50" />
+    <Text style={styles.statValue}>
+      {formatWeight(profile?.weight || '0', useImperialWeight)}
+    </Text>
+    <Text style={styles.statLabel}>Weight</Text>
+  </View>
+  <View style={styles.statCol}>
+    <Activity size={24} color="#2196F3" />
+    <Text style={styles.statValue}>
+      {formatHeight(profile?.height || '0', useImperialHeight)}
+    </Text>
+    <Text style={styles.statLabel}>Height</Text>
+  </View>
+  <View style={styles.statCol}>
+    <Heart size={24} color="#F44336" />
+    <Text style={styles.statValue}>
+      {calculateBMI(profile?.weight || '0', profile?.height || '0')}
+    </Text>
+    <Text style={styles.statLabel}>BMI</Text>
+  </View>
+</View>
+          </>
+        )}
       </View>
 
-      {/* Dietary Preferences */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Dietary Preferences</Text>
         <View style={styles.preferencesContainer}>
-          <View style={styles.preferenceTag}>
-            <Text style={styles.preferenceText}>Vegetarian</Text>
-          </View>
-          <View style={styles.preferenceTag}>
-            <Text style={styles.preferenceText}>Low Carb</Text>
-          </View>
-          <View style={styles.preferenceTag}>
-            <Text style={styles.preferenceText}>Gluten Free</Text>
-          </View>
+          {DIETARY_RESTRICTIONS.map((restriction) => (
+            <TouchableOpacity
+              key={restriction}
+              style={[
+                styles.preferenceTag,
+                editedProfile?.dietaryRestrictions?.includes(restriction) && styles.preferenceTagActive,
+                !isEditing && styles.preferenceTagReadOnly,
+              ]}
+              onPress={isEditing ? () => toggleDietaryRestriction(restriction) : undefined}>
+              <Text style={[
+                styles.preferenceText,
+                editedProfile?.dietaryRestrictions?.includes(restriction) && styles.preferenceTextActive,
+              ]}>
+                {restriction}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
       </View>
 
-      {/* Allergies */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Allergies & Restrictions</Text>
+        {isEditing && (
+          <View style={styles.allergyInput}>
+            <TextInput
+              style={styles.allergyTextInput}
+              placeholder="Add allergy"
+              value={newAllergy}
+              onChangeText={setNewAllergy}
+            />
+            <TouchableOpacity style={styles.allergyAddButton} onPress={addAllergy}>
+              <Text style={styles.allergyAddButtonText}>Add</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         <View style={styles.allergyContainer}>
-          <View style={styles.allergyCard}>
-            <Bell size={20} color="#D32F2F" />
-            <Text style={styles.allergyText}>Peanuts</Text>
-          </View>
-          <View style={styles.allergyCard}>
-            <Bell size={20} color="#D32F2F" />
-            <Text style={styles.allergyText}>Shellfish</Text>
-          </View>
-          <View style={styles.allergyCard}>
-            <Bell size={20} color="#D32F2F" />
-            <Text style={styles.allergyText}>Lactose</Text>
-          </View>
+          {editedProfile?.allergies?.map((allergy, index) => (
+            <View key={index} style={styles.allergyCard}>
+              <Bell size={20} color="#D32F2F" />
+              <Text style={styles.allergyText}>{allergy}</Text>
+              {isEditing && (
+                <TouchableOpacity
+                  style={styles.allergyRemoveButton}
+                  onPress={() => removeAllergy(index)}>
+                  <X size={16} color="#D32F2F" />
+                </TouchableOpacity>
+              )}
+            </View>
+          ))}
         </View>
       </View>
 
-      {/* Connected Apps */}
+      <View style={styles.section}>
+  <Text style={styles.sectionTitle}>Medical Conditions</Text>
+  {isEditing ? (
+    editedProfile?.medicalConditions?.map((condition, index) => (
+      <View key={index} style={{ marginBottom: 12 }}>
+        <TextInput
+          style={styles.bioInput}
+          value={condition.condition}
+          placeholder="Condition"
+          onChangeText={(text) => {
+            setEditedProfile(prev => {
+              if (!prev) return prev;
+              const newConditions = [...prev.medicalConditions];
+              newConditions[index].condition = text;
+              return { ...prev, medicalConditions: newConditions };
+            });
+          }}
+        />
+        <TextInput
+          style={styles.bioInput}
+          value={condition.medication}
+          placeholder="Medication"
+          onChangeText={(text) => {
+            setEditedProfile(prev => {
+              if (!prev) return prev;
+              const newConditions = [...prev.medicalConditions];
+              newConditions[index].medication = text;
+              return { ...prev, medicalConditions: newConditions };
+            });
+          }}
+        />
+        <TextInput
+          style={styles.bioInput}
+          value={condition.duration}
+          placeholder="Duration"
+          onChangeText={(text) => {
+            setEditedProfile(prev => {
+              if (!prev) return prev;
+              const newConditions = [...prev.medicalConditions];
+              newConditions[index].duration = text;
+              return { ...prev, medicalConditions: newConditions };
+            });
+          }}
+        />
+      </View>
+    ))
+  ) : (
+    editedProfile?.medicalConditions?.map((condition, index) => (
+      <View key={index} style={styles.allergyCard}>
+        <Text style={styles.allergyText}>
+          {condition.condition} - {condition.medication} ({condition.duration})
+        </Text>
+      </View>
+    ))
+  )}
+  {isEditing && (
+    <TouchableOpacity
+      onPress={() => setEditedProfile(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          medicalConditions: [
+            ...prev.medicalConditions,
+            { condition: '', medication: '', duration: '' }
+          ]
+        };
+      })}
+      style={styles.editButton}
+    >
+      <Text style={styles.editButtonText}>+ Add Condition</Text>
+    </TouchableOpacity>
+  )}
+</View>
+
+
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Connected Apps</Text>
         <View style={styles.connectedAppsContainer}>
@@ -106,7 +432,6 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      {/* Recent Activity */}
       <View style={[styles.section, styles.lastSection]}>
         <Text style={styles.sectionTitle}>Recent Activity</Text>
         <View style={styles.activityList}>
@@ -128,7 +453,7 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#f8fafc',
   },
   header: {
     padding: 20,
@@ -138,21 +463,53 @@ const styles = StyleSheet.create({
   profileSection: {
     alignItems: 'center',
   },
+  profileImageContainer: {
+    position: 'relative',
+    marginBottom: 16,
+  },
   profileImage: {
     width: 120,
     height: 120,
     borderRadius: 60,
+  },
+  editOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#34d399',
+    padding: 8,
+    borderRadius: 20,
+  },
+  nameInput: {
+    fontSize: 24,
+    fontFamily: 'Inter-Bold',
+    color: '#1B5E20',
+    textAlign: 'center',
+    marginBottom: 4,
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#fff',
+  },
+  bioInput: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#666',
+    textAlign: 'center',
     marginBottom: 16,
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    width: '80%',
   },
   name: {
     fontSize: 24,
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Inter-Bold',
     color: '#1B5E20',
     marginBottom: 4,
   },
   subtitle: {
     fontSize: 16,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Inter-Regular',
     color: '#666',
     marginBottom: 16,
   },
@@ -167,32 +524,51 @@ const styles = StyleSheet.create({
   editButtonText: {
     marginLeft: 8,
     color: '#2196F3',
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Inter-SemiBold',
   },
   statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
     padding: 20,
-    backgroundColor: '#FFF',
   },
   statCard: {
-    alignItems: 'center',
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#fff',
     padding: 16,
     borderRadius: 12,
-    minWidth: 100,
+    marginBottom: 12,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
   statValue: {
     fontSize: 20,
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Inter-Bold',
     color: '#333',
     marginTop: 8,
   },
   statLabel: {
     fontSize: 14,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Inter-Regular',
     color: '#666',
     marginTop: 4,
+  },
+  dateButton: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  dateButtonText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#1e293b',
+    textAlign: 'center',
   },
   section: {
     padding: 20,
@@ -204,7 +580,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Inter-SemiBold',
     color: '#333',
     marginBottom: 16,
   },
@@ -214,14 +590,50 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   preferenceTag: {
-    backgroundColor: '#E8F5E9',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    backgroundColor: '#fff',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  preferenceTagActive: {
+    backgroundColor: '#34d399',
+    borderColor: '#34d399',
+  },
+  preferenceTagReadOnly: {
+    opacity: 0.8,
   },
   preferenceText: {
-    color: '#1B5E20',
-    fontFamily: 'Inter_600SemiBold',
+    color: '#64748b',
+    fontFamily: 'Inter-SemiBold',
+  },
+  preferenceTextActive: {
+    color: '#fff',
+  },
+  allergyInput: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  allergyTextInput: {
+    flex: 1,
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 12,
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+  },
+  allergyAddButton: {
+    backgroundColor: '#34d399',
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  allergyAddButtonText: {
+    color: '#fff',
+    fontFamily: 'Inter-SemiBold',
   },
   allergyContainer: {
     flexDirection: 'row',
@@ -238,7 +650,10 @@ const styles = StyleSheet.create({
   },
   allergyText: {
     color: '#D32F2F',
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Inter-SemiBold',
+  },
+  allergyRemoveButton: {
+    padding: 4,
   },
   connectedAppsContainer: {
     backgroundColor: '#F5F5F5',
@@ -258,12 +673,12 @@ const styles = StyleSheet.create({
   },
   appName: {
     fontSize: 16,
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Inter-SemiBold',
     color: '#333',
   },
   appStatus: {
     fontSize: 14,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Inter-Regular',
     color: '#4CAF50',
   },
   activityList: {
@@ -284,13 +699,45 @@ const styles = StyleSheet.create({
   },
   activityTitle: {
     fontSize: 14,
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Inter-SemiBold',
     color: '#333',
   },
   activityTime: {
     fontSize: 12,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Inter-Regular',
     color: '#666',
     marginTop: 2,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#64748b',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#ef4444',
+    textAlign: 'center',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+  },
+  statCol: {
+    alignItems: 'center',
+    flex: 1,
   },
 });

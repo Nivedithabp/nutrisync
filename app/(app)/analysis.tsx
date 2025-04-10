@@ -1,78 +1,157 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { AlertTriangle, ShoppingCart } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { AlertTriangle, Leaf, Scale, Heart } from 'lucide-react-native';
+import Animated, { FadeInUp } from 'react-native-reanimated';
+
+interface NutritionData {
+  product_name: string;
+  categories: string;
+  ingredients_text: string;
+  nutrition_grade_fr: string;
+  energy_100g: number;
+  proteins_100g: number;
+  carbohydrates_100g: number;
+  fat_100g: number;
+  fiber_100g: number;
+  sodium_100g: number;
+  [key: string]: any;
+}
 
 export default function AnalysisScreen() {
-  const { barcode } = useLocalSearchParams();
+  const params = useLocalSearchParams();
+  const [data, setData] = useState<NutritionData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        if (params.data) {
+          setData(JSON.parse(params.data as string));
+        } else if (params.barcode) {
+          const response = await fetch('http://127.0.0.1:8000/analyze', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ barcode: '0009800600106' }),
+          });
+          
+          if (!response.ok) {
+            throw new Error('Failed to fetch product data');
+          }
+          
+          const result = await response.json();
+          setData(result);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'An error occurred');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [params]);
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.loadingText}>Analyzing product...</Text>
+      </View>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.errorText}>{error || 'No data available'}</Text>
+      </View>
+    );
+  }
+
+  const nutritionScore = data.nutrition_grade_fr?.toLowerCase() || 'e';
+  const scoreColors: { [key: string]: readonly [string, string] } = {
+    a: ['#34d399', '#10b981'],
+    b: ['#60a5fa', '#3b82f6'],
+    c: ['#fbbf24', '#f59e0b'],
+    d: ['#fb923c', '#f97316'],
+    e: ['#f87171', '#ef4444'],
+  };
+  
 
   return (
     <ScrollView style={styles.container}>
       <LinearGradient
-        colors={['#E8F5E9', '#FFFFFF']}
-        style={styles.headerGradient}
+        colors={scoreColors[nutritionScore] || scoreColors.e}
+        style={styles.header}
       >
-        <View style={styles.productHeader}>
-          <Image
-            source={{ uri: 'https://images.unsplash.com/photo-1571091718767-18b5b1457add?w=300' }}
-            style={styles.productImage}
-          />
-          <View style={styles.productInfo}>
-            <Text style={styles.productName}>Nature Valley Granola</Text>
-            <Text style={styles.productBrand}>General Mills</Text>
-          </View>
+        <Text style={styles.productName}>{data.product_name}</Text>
+        {data.categories && (
+          <Text style={styles.category}>{data.categories}</Text>
+        )}
+        
+        <View style={styles.scoreContainer}>
+          <Text style={styles.scoreLabel}>Nutrition Score</Text>
+          <Text style={styles.score}>{nutritionScore.toUpperCase()}</Text>
         </View>
       </LinearGradient>
 
-      {/* Allergen Warning */}
-      <View style={styles.warningCard}>
-        <AlertTriangle size={24} color="#D32F2F" />
-        <View style={styles.warningContent}>
-          <Text style={styles.warningTitle}>Allergen Alert</Text>
-          <Text style={styles.warningText}>Contains nuts and wheat</Text>
-        </View>
-      </View>
-
-      {/* Nutrition Analysis */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Nutrition Analysis</Text>
-        <View style={styles.nutritionGrid}>
-          <View style={styles.nutritionItem}>
-            <Text style={styles.nutritionValue}>240</Text>
-            <Text style={styles.nutritionLabel}>Calories</Text>
+      <Animated.View entering={FadeInUp.delay(200)} style={styles.section}>
+        <Text style={styles.sectionTitle}>Key Nutrients</Text>
+        <View style={styles.nutrientsGrid}>
+          <View style={styles.nutrientCard}>
+            <Scale size={24} color="#3b82f6" />
+            <Text style={styles.nutrientValue}>{data.energy_100g}kcal</Text>
+            <Text style={styles.nutrientLabel}>Energy</Text>
           </View>
-          <View style={styles.nutritionItem}>
-            <Text style={styles.nutritionValue}>6g</Text>
-            <Text style={styles.nutritionLabel}>Protein</Text>
+          <View style={styles.nutrientCard}>
+            <Heart size={24} color="#ef4444" />
+            <Text style={styles.nutrientValue}>{data.proteins_100g}g</Text>
+            <Text style={styles.nutrientLabel}>Protein</Text>
           </View>
-          <View style={styles.nutritionItem}>
-            <Text style={styles.nutritionValue}>12g</Text>
-            <Text style={styles.nutritionLabel}>Sugar</Text>
+          <View style={styles.nutrientCard}>
+            <Leaf size={24} color="#34d399" />
+            <Text style={styles.nutrientValue}>{data.fiber_100g}g</Text>
+            <Text style={styles.nutrientLabel}>Fiber</Text>
           </View>
         </View>
-      </View>
+      </Animated.View>
 
-      {/* AI Recommendations */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Healthier Alternatives</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.alternativesScroll}>
-          {[1, 2, 3].map((item) => (
-            <View key={item} style={styles.alternativeCard}>
-              <Image
-                source={{ uri: 'https://images.unsplash.com/photo-1576618148400-f54bed99fcfd?w=200' }}
-                style={styles.alternativeImage}
-              />
-              <Text style={styles.alternativeName}>Organic Granola</Text>
-              <Text style={styles.alternativePrice}>$5.99</Text>
-              <TouchableOpacity style={styles.buyButton}>
-                <ShoppingCart size={16} color="#FFF" />
-                <Text style={styles.buyButtonText}>Buy Now</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
-        </ScrollView>
-      </View>
+      <Animated.View entering={FadeInUp.delay(400)} style={styles.section}>
+        <Text style={styles.sectionTitle}>Ingredients</Text>
+        <Text style={styles.ingredients}>{data.ingredients_text}</Text>
+      </Animated.View>
+
+      {data.additives && (
+        <Animated.View entering={FadeInUp.delay(600)} style={styles.section}>
+          <View style={styles.warningHeader}>
+            <AlertTriangle size={20} color="#f97316" />
+            <Text style={styles.warningTitle}>Additives Found</Text>
+          </View>
+          <Text style={styles.additives}>{data.additives}</Text>
+        </Animated.View>
+      )}
+
+      <Animated.View entering={FadeInUp.delay(800)} style={[styles.section, styles.lastSection]}>
+        <Text style={styles.sectionTitle}>Detailed Nutrition</Text>
+        <View style={styles.nutritionTable}>
+          <View style={styles.nutritionRow}>
+            <Text style={styles.nutritionLabel}>Carbohydrates</Text>
+            <Text style={styles.nutritionValue}>{data.carbohydrates_100g}g</Text>
+          </View>
+          <View style={styles.nutritionRow}>
+            <Text style={styles.nutritionLabel}>Fat</Text>
+            <Text style={styles.nutritionValue}>{data.fat_100g}g</Text>
+          </View>
+          <View style={styles.nutritionRow}>
+            <Text style={styles.nutritionLabel}>Sodium</Text>
+            <Text style={styles.nutritionValue}>{data.sodium_100g}g</Text>
+          </View>
+        </View>
+      </Animated.View>
     </ScrollView>
   );
 }
@@ -80,135 +159,140 @@ export default function AnalysisScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#f8fafc',
   },
-  headerGradient: {
+  header: {
     padding: 20,
     paddingTop: 60,
-  },
-  productHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  productImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 10,
-    marginRight: 15,
-  },
-  productInfo: {
-    flex: 1,
+    paddingBottom: 40,
   },
   productName: {
     fontSize: 24,
-    fontFamily: 'Inter_700Bold',
-    color: '#1B5E20',
-    marginBottom: 5,
+    fontFamily: 'Inter-Bold',
+    color: '#fff',
+    marginBottom: 8,
   },
-  productBrand: {
+  category: {
     fontSize: 16,
-    fontFamily: 'Inter_400Regular',
-    color: '#616161',
+    fontFamily: 'Inter-Regular',
+    color: '#fff',
+    opacity: 0.8,
   },
-  warningCard: {
-    flexDirection: 'row',
-    backgroundColor: '#FFEBEE',
-    margin: 20,
-    padding: 15,
-    borderRadius: 12,
+  scoreContainer: {
     alignItems: 'center',
+    marginTop: 20,
   },
-  warningContent: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  warningTitle: {
-    fontSize: 16,
-    fontFamily: 'Inter_600SemiBold',
-    color: '#D32F2F',
-  },
-  warningText: {
+  scoreLabel: {
     fontSize: 14,
-    fontFamily: 'Inter_400Regular',
-    color: '#666',
-    marginTop: 4,
+    fontFamily: 'Inter-Regular',
+    color: '#fff',
+    opacity: 0.8,
+    marginBottom: 8,
+  },
+  score: {
+    fontSize: 48,
+    fontFamily: 'Inter-Bold',
+    color: '#fff',
   },
   section: {
     padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+  },
+  lastSection: {
+    borderBottomWidth: 0,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontFamily: 'Inter_600SemiBold',
-    color: '#333',
-    marginBottom: 15,
+    fontSize: 18,
+    fontFamily: 'Inter-Bold',
+    color: '#1e293b',
+    marginBottom: 16,
   },
-  nutritionGrid: {
+  nutrientsGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: '#F5F5F5',
-    padding: 15,
-    borderRadius: 12,
+    gap: 12,
   },
-  nutritionItem: {
+  nutrientCard: {
+    flex: 1,
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
     alignItems: 'center',
-  },
-  nutritionValue: {
-    fontSize: 24,
-    fontFamily: 'Inter_700Bold',
-    color: '#1B5E20',
-  },
-  nutritionLabel: {
-    fontSize: 14,
-    fontFamily: 'Inter_400Regular',
-    color: '#666',
-    marginTop: 4,
-  },
-  alternativesScroll: {
-    marginHorizontal: -20,
-    paddingHorizontal: 20,
-  },
-  alternativeCard: {
-    width: 160,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 10,
-    marginRight: 15,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
-  alternativeImage: {
-    width: '100%',
-    height: 120,
-    borderRadius: 8,
-    marginBottom: 8,
+  nutrientValue: {
+    fontSize: 20,
+    fontFamily: 'Inter-Bold',
+    color: '#1e293b',
+    marginTop: 8,
   },
-  alternativeName: {
+  nutrientLabel: {
     fontSize: 14,
-    fontFamily: 'Inter_600SemiBold',
-    color: '#333',
-    marginBottom: 4,
+    fontFamily: 'Inter-Regular',
+    color: '#64748b',
+    marginTop: 4,
   },
-  alternativePrice: {
+  ingredients: {
     fontSize: 16,
-    fontFamily: 'Inter_700Bold',
-    color: '#1B5E20',
-    marginBottom: 8,
+    fontFamily: 'Inter-Regular',
+    color: '#1e293b',
+    lineHeight: 24,
   },
-  buyButton: {
+  warningHeader: {
     flexDirection: 'row',
-    backgroundColor: '#2196F3',
-    padding: 8,
-    borderRadius: 8,
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 12,
   },
-  buyButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontFamily: 'Inter_600SemiBold',
-    marginLeft: 4,
+  warningTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#f97316',
   },
-}); 
+  additives: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#1e293b',
+    lineHeight: 24,
+  },
+  nutritionTable: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  nutritionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+  },
+  nutritionLabel: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#1e293b',
+  },
+  nutritionValue: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#1e293b',
+  },
+  loadingText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#64748b',
+    textAlign: 'center',
+    marginTop: 40,
+  },
+  errorText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#ef4444',
+    textAlign: 'center',
+    marginTop: 40,
+  },
+});
