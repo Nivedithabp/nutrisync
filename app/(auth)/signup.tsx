@@ -19,7 +19,8 @@ export default function SignUp() {
 
     try {
       await createUserWithEmailAndPassword(auth, email, password);
-      router.replace('/(app)/(tabs)');
+      router.replace('OnboardingPage');
+
     } catch (err) {
       setError('Failed to create account');
     }

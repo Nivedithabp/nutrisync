@@ -25,7 +25,7 @@ export default function HomeScreen() {
           />
           <TouchableOpacity
             style={styles.scanButton}
-            onPress={() => router.push('/(app)/(tabs)/scan')}
+            onPress={() => router.push('/(app)/scan')}
           >
             <Scan size={20} color="#FFF" />
           </TouchableOpacity>
